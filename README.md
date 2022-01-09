@@ -7,12 +7,21 @@ Implementation of gMLP from [Pay Attention to MLPs](https://arxiv.org/abs/2105.0
 
 ## Usage
 
+```python
+model = tf.keras.Sequential([
+  gMLPLayer(),
+  gMLPLayer(dropout_rate=0.05),
+  Flatten(),
+  Dense(3)
+])
+```
+
 
 ## Citations
 
 ```bibtex
 @misc{liu2021pay,
-    title   = {Pay Attention to MLPs}, 
+    title   = {Pay Attention to MLPs},
     author  = {Hanxiao Liu and Zihang Dai and David R. So and Quoc V. Le},
     year    = {2021},
     eprint  = {2105.08050},

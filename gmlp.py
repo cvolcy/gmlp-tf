@@ -1,21 +1,24 @@
 import tensorflow as tf
-from tensorflow.keras import Model
-from tensorflow.keras.layers import Layer, Dense, BatchNormalization, LayerNormalization
-from tensorflow.keras.initializers import RandomUniform
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Layer, Dense, LayerNormalization, Dropout
 
-class gMLPLayer(Model):
-    def __init__(self, dim_in, dim_out, **kwargs):
+class gMLPLayer(Layer):
+    def __init__(self, dropout_rate=0.1, **kwargs):
         super(gMLPLayer, self).__init__(**kwargs)
+        self.dropout_rate = dropout_rate
 
-        self.norm = BatchNormalization()
-        self.proj_in = Dense(dim_in, activation="gelu")
-        self.sgu = SpatialGatingUnit()
-        self.proj_out = Dense(dim_out, activation="gelu")
+    def build(self, input_shape):
+        self.norm = LayerNormalization(epsilon=1e-6)
+        self.proj_in = Sequential([
+            Dense(units=input_shape[-1] * 2, activation='gelu'),
+            Dropout(rate=self.dropout_rate),
+        ])
+        self.sgu = SpatialGatingUnit(input_shape[-2])
+        self.proj_out = Dense(input_shape[-1])
 
     def call(self, inputs):
-        shortcut = inputs
-        x = self.norm(inputs)
-        x = self.proj_in(x)
+        shortcut = self.norm(inputs)
+        x = self.proj_in(shortcut)
         x = self.sgu(x)
         x = self.proj_out(x)
 
@@ -24,32 +27,19 @@ class gMLPLayer(Model):
 class SpatialGatingUnit(Layer):
     def __init__(self, dim_in, **kwargs):
         super(SpatialGatingUnit, self).__init__(**kwargs)
-        
         self.dim_in = dim_in
 
     def build(self, input_shape):
-        self.norm = LayerNormalization()
-        
-        self.conv1d_bias = self.add_weight(
-            name="sgu_conv1d_bias",
-            shape=[self.dim_in], 
-            initializer=tf.ones
-        )
-        
-        init_range = (1e-3) / self.dim_in
-        self.conv1d_filter = self.add_weight(
-            name="sgu_conv1d_filter", 
-            shape=(1, self.dim_in, self.dim_in), 
-            initializer=RandomUniform(minval=-init_range, maxval=init_range)
-        )
-        
+        self.norm = LayerNormalization(epsilon=1e-6)
+        self.proj = Dense(units=self.dim_in, bias_initializer="Ones")
+
     def call(self, inputs):
         u, v = tf.split(inputs, 2, axis=-1)
+
         v = self.norm(v)
 
-        v = tf.transpose(v, (0, 2, 1))
-        v = tf.nn.conv1d(v, filters=self.conv1d_filter, stride=1, use_cudnn_on_gpu=True, data_format="NWC", padding="VALID") 
-        v = tf.nn.bias_add(v, bias=self.conv1d_bias, data_format="NWC")
-        v = tf.transpose(v, (0,2,1))
+        v = tf.linalg.matrix_transpose(v)
+        v = self.proj(v)
+        v = tf.linalg.matrix_transpose(v)
 
         return u * v
